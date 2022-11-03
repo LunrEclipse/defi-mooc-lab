@@ -1,8 +1,6 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity ^0.8.7;
 
-import "hardhat/console.sol";
-
 // ----------------------INTERFACE------------------------------
 
 // Aave
@@ -71,7 +69,7 @@ interface IERC20 {
      * The function SHOULD throw if the message caller’s account balance does not have enough tokens to spend.
      * Lets msg.sender send pool tokens to an address.
      **/
-    function transfer(address to, uint256 value) external returns (bool);
+    function transfer(address to, uint256 value) external;
 }
 
 // https://github.com/Uniswap/v2-periphery/blob/master/contracts/interfaces/IWETH.sol
@@ -137,6 +135,23 @@ contract LiquidationOperator is IUniswapV2Callee {
 
     // TODO: define constants used in the contract including ERC-20 tokens, Uniswap Pairs, Aave lending pools, etc. */
     //    *** Your code here ***
+        //Everything needed for liquidation contract
+        address AAVE_LENDING_POOL_ADDRESS = 0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9;
+        //Collateral token
+        address WRAPPED_BTC_ADDRESS = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
+        //Debt token
+        address USDT_ADDRESS = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
+        address AAVE_BORROWER_ADDRESS = 0x59CE4a2AC5bC3f5F225439B2993b86B42f6d3e9F;
+        uint256 AAVE_LIQUIDATION_DEBT_TO_COVER = 2916378221684;
+
+        //Uniswap
+        address UNISWAP_V2_FACTORY_ADDRESS = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
+        address UNISWAP_V2_WETH_ADDRESS = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        address UNISWAP_V2_WETH_USDT_PAIR_ADDRESS = 0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852;
+        address UNISWAP_V2_WBTC_WETH_PAIR_ADDRESS = 0xBb2b8038a1640196FbE3e38816F3e67Cba72D940;
+
+        address WRAPPED_ETH_ADDRESS = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        uint256 amountToRepay = 0;
     // END TODO
 
     // some helper function, it is totally fine if you can finish the lab without using these function
@@ -185,6 +200,8 @@ contract LiquidationOperator is IUniswapV2Callee {
 
     // TODO: add a `receive` function so that you can withdraw your WETH
     //   *** Your code here ***
+    receive() external payable {
+    }
     // END TODO
 
     // required by the testing script, entry for your liquidation call
@@ -194,8 +211,13 @@ contract LiquidationOperator is IUniswapV2Callee {
         // 0. security checks and initializing variables
         //    *** Your code here ***
 
+
         // 1. get the target user account data & make sure it is liquidatable
         //    *** Your code here ***
+        (, uint256 totalDebt, , , , uint256 healthFactor ) = ILendingPool(AAVE_LENDING_POOL_ADDRESS).getUserAccountData(AAVE_BORROWER_ADDRESS);
+        //AAVE_LIQUIDATION_DEBT_TO_COVER = totalDebt * 49 / 100;
+        require(healthFactor < 1e18, "User is not liquidatable");
+
 
         // 2. call flash swap to liquidate the target user
         // based on https://etherscan.io/tx/0xac7df37a43fab1b130318bbb761861b8357650db2e2c6493b73d6da3d9581077
@@ -204,8 +226,22 @@ contract LiquidationOperator is IUniswapV2Callee {
         // (please feel free to develop other workflows as long as they liquidate the target user successfully)
         //    *** Your code here ***
 
+        //Get the amount of USDT to 
+        //WETH - token0, USDT - token1
+        (uint112 reserve0, uint112 reserve1, ) = IUniswapV2Pair(UNISWAP_V2_WETH_USDT_PAIR_ADDRESS).getReserves();
+        uint256 repayment = getAmountIn(AAVE_LIQUIDATION_DEBT_TO_COVER, reserve0, reserve1);
+        amountToRepay = repayment;
+
+        // uint256 amountToBorrow = getAmountOut(AAVE_LIQUIDATION_DEBT_TO_COVER, reserve0, reserve1);
+        // IUniswapV2Pair(UNISWAP_V2_WETH_USDT_PAIR_ADDRESS).swap(0, amountToBorrow, address(this), new bytes(1));
+        IUniswapV2Pair(UNISWAP_V2_WETH_USDT_PAIR_ADDRESS).swap(0, AAVE_LIQUIDATION_DEBT_TO_COVER, address(this), new bytes(1));
+        
+
+
         // 3. Convert the profit into ETH and send back to sender
         //    *** Your code here ***
+        IWETH(WRAPPED_ETH_ADDRESS).withdraw(IERC20(WRAPPED_ETH_ADDRESS).balanceOf(address(this)));
+        payable(msg.sender).transfer(address(this).balance);
 
         // END TODO
     }
@@ -221,16 +257,42 @@ contract LiquidationOperator is IUniswapV2Callee {
 
         // 2.0. security checks and initializing variables
         //    *** Your code here ***
+        require(msg.sender == UNISWAP_V2_WETH_USDT_PAIR_ADDRESS, "Invalid caller");
+        // (uint112 reserve0, uint112 reserve1, ) = IUniswapV2Pair(UNISWAP_V2_WETH_USDT_PAIR_ADDRESS).getReserves();
+        // uint256 amountToBorrow = getAmountOut(AAVE_LIQUIDATION_DEBT_TO_COVER, reserve0, reserve1);
+        uint256 amountToBorrow = AAVE_LIQUIDATION_DEBT_TO_COVER;
+        require(amount1 == amountToBorrow, "Invalid amount");
+        require(IERC20(USDT_ADDRESS).balanceOf(address(this)) == amount1, "Invalid balance");
 
         // 2.1 liquidate the target user
         //    *** Your code here ***
+        IERC20(USDT_ADDRESS).approve(AAVE_LENDING_POOL_ADDRESS, amountToBorrow);
+        ILendingPool(AAVE_LENDING_POOL_ADDRESS).liquidationCall(
+            WRAPPED_BTC_ADDRESS,
+            USDT_ADDRESS,
+            AAVE_BORROWER_ADDRESS,
+            amount1,
+            false
+        );
+
 
         // 2.2 swap WBTC for other things or repay directly
         //    *** Your code here ***
+        uint256 wbtcBalance = IERC20(WRAPPED_BTC_ADDRESS).balanceOf(address(this));
+        require(wbtcBalance > 0, "Invalid WBTC balance");
+        //WBTC - token0, WETH - token1
+        (uint256 reserve0, uint256 reserve1, ) = IUniswapV2Pair(UNISWAP_V2_WBTC_WETH_PAIR_ADDRESS).getReserves();
+        uint256 amountToSwap = getAmountOut(wbtcBalance, reserve0, reserve1);
+        IERC20(WRAPPED_BTC_ADDRESS).transfer(UNISWAP_V2_WBTC_WETH_PAIR_ADDRESS, wbtcBalance);
+        IUniswapV2Pair(UNISWAP_V2_WBTC_WETH_PAIR_ADDRESS).swap(0, amountToSwap, address(this), new bytes(0));
 
         // 2.3 repay
         //    *** Your code here ***
-        
+        uint256 wethBalance = IERC20(WRAPPED_ETH_ADDRESS).balanceOf(address(this));
+        //(reserve0, reserve1, ) = IUniswapV2Pair(UNISWAP_V2_WBTC_WETH_PAIR_ADDRESS).getReserves();
+        //uint256 amountToRepay = getAmountIn(AAVE_LIQUIDATION_DEBT_TO_COVER, reserve0, reserve1);
+        require(wethBalance >= amountToRepay, "Invalid WETH balance");
+        IERC20(WRAPPED_ETH_ADDRESS).transfer(UNISWAP_V2_WETH_USDT_PAIR_ADDRESS, amountToRepay);        
         // END TODO
     }
 }
