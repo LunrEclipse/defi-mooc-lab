@@ -151,12 +151,13 @@ contract LiquidationOperator is IUniswapV2Callee {
         //1750000000000 - 43.833442463190567285 ETH
         //1749500000000 - 43.833498824510530854 ETH
         //1516378221684 - 43.076711042891964395 ETH
+        //
         // y = -1.4388*10^-23 + 5.0242*10^-11 - 0.0249769
 
 
         //Uniswap
-        address UNISWAP_V2_FACTORY_ADDRESS = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
-        address UNISWAP_V2_WETH_ADDRESS = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        // address UNISWAP_V2_FACTORY_ADDRESS = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
+        // address UNISWAP_V2_WETH_ADDRESS = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
         address UNISWAP_V2_WETH_USDT_PAIR_ADDRESS = 0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852;
         address UNISWAP_V2_WBTC_WETH_PAIR_ADDRESS = 0xBb2b8038a1640196FbE3e38816F3e67Cba72D940;
 
@@ -244,6 +245,7 @@ contract LiquidationOperator is IUniswapV2Callee {
 
         // uint256 amountToBorrow = getAmountOut(AAVE_LIQUIDATION_DEBT_TO_COVER, reserve0, reserve1);
         // IUniswapV2Pair(UNISWAP_V2_WETH_USDT_PAIR_ADDRESS).swap(0, amountToBorrow, address(this), new bytes(1));
+        IUniswapV2Pair(UNISWAP_V2_WETH_USDT_PAIR_ADDRESS).swap(0, AAVE_LIQUIDATION_DEBT_TO_COVER, address(this), new bytes(1));
         IUniswapV2Pair(UNISWAP_V2_WETH_USDT_PAIR_ADDRESS).swap(0, AAVE_LIQUIDATION_DEBT_TO_COVER, address(this), new bytes(1));
         
 
